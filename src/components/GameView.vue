@@ -4,6 +4,9 @@
       :state="state"
       :days-left="daysLeft"
       :profit="profit"
+      :reputation="reputation"
+      :reputation-label="reputationLabel"
+      :reputation-level="reputationLevel"
       :theme="theme"
       @back="$emit('back')"
       @toggle-theme="$emit('toggle-theme')"
@@ -67,6 +70,21 @@
       @resolve="(keep) => $emit('resolve-poaching', keep)"
     />
 
+    <CrisisModal
+      v-if="state.pendingCrisis && state.gameStatus === 'playing'"
+      :crisis="state.pendingCrisis"
+      :money="state.money"
+      @resolve="onCrisisResolve"
+    />
+
+    <FollowUpModal
+      v-if="showFollowUp && state.gameStatus === 'playing'"
+      :follow-up="state.pendingFollowUp"
+      :money="state.money"
+      :current-day="state.day"
+      @resolve="onFollowUpResolve"
+    />
+
     <GameOverModal
       v-if="state.gameStatus !== 'playing'"
       :status="state.gameStatus"
@@ -90,6 +108,8 @@ import RelationshipPanel from './RelationshipPanel.vue'
 import RatingModal from './RatingModal.vue'
 import DebutModal from './DebutModal.vue'
 import EventModal from './EventModal.vue'
+import CrisisModal from './CrisisModal.vue'
+import FollowUpModal from './FollowUpModal.vue'
 import GameOverModal from './GameOverModal.vue'
 
 const props = defineProps({
@@ -97,6 +117,10 @@ const props = defineProps({
   activeTrainees: Array,
   daysLeft: Number,
   profit: Number,
+  reputation: Number,
+  reputationLabel: String,
+  reputationLevel: String,
+  showFollowUp: Boolean,
   theme: String,
   canEndDay: Boolean,
   ratingResults: Array,
@@ -113,6 +137,8 @@ const emit = defineEmits([
   'debut',
   'resolve-poaching',
   'release-single',
+  'resolve-crisis',
+  'resolve-followup',
 ])
 
 const showDebut = ref(false)
@@ -123,6 +149,30 @@ function onDebut(memberIds, groupName) {
     if (result?.success) {
       showDebut.value = false
       toast.value = '出道成功！'
+      setTimeout(() => { toast.value = '' }, 2500)
+    } else if (result?.message) {
+      toast.value = result.message
+      setTimeout(() => { toast.value = '' }, 3000)
+    }
+  })
+}
+
+function onCrisisResolve(strategyId, resourceLevel) {
+  emit('resolve-crisis', strategyId, resourceLevel, (result) => {
+    if (result?.success) {
+      toast.value = result.state.pendingFollowUp ? '危机已处理，等待后续跟进时机...' : '危机已处理！'
+      setTimeout(() => { toast.value = '' }, 3000)
+    } else if (result?.message) {
+      toast.value = result.message
+      setTimeout(() => { toast.value = '' }, 3000)
+    }
+  })
+}
+
+function onFollowUpResolve(doFollowUp) {
+  emit('resolve-followup', doFollowUp, (result) => {
+    if (result?.success) {
+      toast.value = doFollowUp ? '后续行动已执行！' : '已跳过后续行动'
       setTimeout(() => { toast.value = '' }, 2500)
     } else if (result?.message) {
       toast.value = result.message

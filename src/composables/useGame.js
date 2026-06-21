@@ -10,6 +10,10 @@ import {
   calcProfit,
   calcTraineeScore,
   getRelationship,
+  resolveCrisis,
+  resolveFollowUp,
+  getReputationLevel,
+  getReputationLabel,
 } from '../utils/gameLogic'
 import { saveToSlot } from '../utils/storage'
 
@@ -25,6 +29,17 @@ export function useGame() {
   const activeTrainees = computed(() =>
     state.value ? state.value.trainees.filter((t) => t.status !== 'left') : []
   )
+  const reputation = computed(() => (state.value ? state.value.reputation : 50))
+  const reputationLevel = computed(() =>
+    state.value ? getReputationLevel(state.value.reputation) : 'normal'
+  )
+  const reputationLabel = computed(() =>
+    state.value ? getReputationLabel(state.value.reputation) : '一般'
+  )
+  const showFollowUp = computed(() => {
+    if (!state.value || !state.value.pendingFollowUp) return false
+    return state.value.day >= state.value.pendingFollowUp.availableDay
+  })
 
   function startNewGame(slotIndex) {
     state.value = createInitialGameState()
@@ -112,6 +127,26 @@ export function useGame() {
     return getRelationship(state.value.relationships, idA, idB)
   }
 
+  function handleCrisis(strategyId, resourceLevel) {
+    if (!state.value) return null
+    const result = resolveCrisis(state.value, strategyId, resourceLevel)
+    if (result.success) {
+      state.value = result.state
+      autoSave()
+    }
+    return result
+  }
+
+  function handleFollowUp(doFollowUp) {
+    if (!state.value) return null
+    const result = resolveFollowUp(state.value, doFollowUp)
+    if (result.success) {
+      state.value = result.state
+      autoSave()
+    }
+    return result
+  }
+
   return {
     state,
     currentSlot,
@@ -119,6 +154,10 @@ export function useGame() {
     profit,
     daysLeft,
     activeTrainees,
+    reputation,
+    reputationLevel,
+    reputationLabel,
+    showFollowUp,
     startNewGame,
     loadGame,
     setSchedule,
@@ -128,6 +167,8 @@ export function useGame() {
     handlePoaching,
     handleDebut,
     handleReleaseSingle,
+    handleCrisis,
+    handleFollowUp,
     dismissRating,
     backToMenu,
     getRel,

@@ -13,6 +13,7 @@ export function createInitialGameState() {
     day: 1,
     money: CFG.initial.money,
     fans: CFG.initial.fans,
+    reputation: CFG.reputation.initial,
     totalRevenue: 0,
     totalExpenses: 0,
     trainees,
@@ -21,9 +22,12 @@ export function createInitialGameState() {
     schedule: {},
     logs: [{ day: 1, text: '事务所成立！五位练习生已就位，三年征途正式开始。' }],
     pendingEvent: null,
+    pendingCrisis: null,
+    pendingFollowUp: null,
     pendingRating: false,
     gameStatus: 'playing',
     lastSingleDay: {},
+    crisisHistory: [],
   }
 }
 
@@ -268,8 +272,27 @@ export function processDay(state) {
   const newDay = state.day + 1
   const pendingRating = state.day % CFG.rating.interval === 0
 
+  let reputation = state.reputation
+  reputation = clamp(reputation + CFG.reputation.dailyRecovery, CFG.reputation.min, CFG.reputation.max)
+
   let pendingEvent = null
-  if (Math.random() < CFG.events.dailyChance) {
+  let pendingCrisis = state.pendingCrisis
+  let pendingFollowUp = state.pendingFollowUp
+
+  if (pendingFollowUp && state.day >= pendingFollowUp.availableDay) {
+    // 后续跟进时机已到，将在UI中展示给玩家选择
+  } else if (!pendingCrisis && !pendingFollowUp && Math.random() < CFG.crisis.dailyChance) {
+    pendingCrisis = generateCrisisEvent(trainees, state.groups, state.day)
+    reputation = clamp(reputation - pendingCrisis.reputationHit, CFG.reputation.min, CFG.reputation.max)
+    fans = Math.max(0, fans - pendingCrisis.fansLoss)
+    const targetText = pendingCrisis.target ? `，涉及 ${pendingCrisis.target.name}` : ''
+    logs.push({
+      day: state.day,
+      text: `🚨【危机事件】${pendingCrisis.title}${targetText}！口碑 -${pendingCrisis.reputationHit}，粉丝 -${pendingCrisis.fansLoss}`,
+    })
+  }
+
+  if (!pendingCrisis && !pendingFollowUp && Math.random() < CFG.events.dailyChance) {
     pendingEvent = generateRandomEvent(trainees, state.day)
     if (pendingEvent.type === 'fan_surge') {
       fans += pendingEvent.fansGain
@@ -286,6 +309,7 @@ export function processDay(state) {
       pendingEvent = null
     } else if (pendingEvent.type === 'negative_news') {
       fans = Math.max(0, fans - pendingEvent.fansLoss)
+      reputation = clamp(reputation - 3, CFG.reputation.min, CFG.reputation.max)
       for (const t of trainees) {
         if (t.status !== 'left') {
           t.stress = clamp(t.stress + pendingEvent.stressGain, 0, 100)
@@ -293,7 +317,7 @@ export function processDay(state) {
       }
       logs.push({
         day: state.day,
-        text: `【${pendingEvent.label}】粉丝 -${pendingEvent.fansLoss}，全员压力上升。`,
+        text: `【${pendingEvent.label}】粉丝 -${pendingEvent.fansLoss}，口碑 -3，全员压力上升。`,
       })
       pendingEvent = null
     } else if (pendingEvent.type === 'illness') {
@@ -316,12 +340,15 @@ export function processDay(state) {
     day: newDay,
     money,
     fans,
+    reputation,
     totalExpenses,
     trainees,
     relationships,
     schedule: {},
     logs: [...state.logs, ...logs],
     pendingEvent,
+    pendingCrisis,
+    pendingFollowUp,
     pendingRating,
   }
 
@@ -554,4 +581,225 @@ export function getRatingResults(state) {
       canDebut: calcTraineeScore(t) >= CFG.rating.debutScoreThreshold,
     }))
     .sort((a, b) => b.score - a.score)
+}
+
+function generateCrisisEvent(trainees, groups, day) {
+  const scripts = Object.values(CFG.crisis.scripts)
+  const script = pickRandom(scripts)
+
+  let target = null
+  if (script.involveTarget) {
+    const active = trainees.filter((t) => t.status !== 'left')
+    if (active.length > 0) {
+      target = pickRandom(active)
+    }
+  }
+
+  const reputationHit = randInt(script.baseReputationHit[0], script.baseReputationHit[1])
+  const fansLoss = randInt(script.baseFansLoss[0], script.baseFansLoss[1])
+
+  return {
+    id: `crisis_${Date.now()}`,
+    scriptId: script.id,
+    title: script.title,
+    icon: script.icon,
+    severity: script.severity,
+    description: script.description,
+    day,
+    target,
+    reputationHit,
+    fansLoss,
+    resolved: false,
+    strategy: null,
+    resourceLevel: null,
+    success: null,
+    followUp: null,
+    followUpDone: false,
+  }
+}
+
+export function getReputationLevel(reputation) {
+  if (reputation >= CFG.reputation.excellentThreshold) return 'excellent'
+  if (reputation >= CFG.reputation.goodThreshold) return 'good'
+  if (reputation >= CFG.reputation.poorThreshold) return 'normal'
+  if (reputation >= CFG.reputation.crisisThreshold) return 'poor'
+  return 'critical'
+}
+
+export function getReputationLabel(reputation) {
+  const level = getReputationLevel(reputation)
+  const labels = {
+    excellent: '优秀',
+    good: '良好',
+    normal: '一般',
+    poor: '较差',
+    critical: '危机',
+  }
+  return labels[level]
+}
+
+export function resolveCrisis(state, strategyId, resourceLevel) {
+  const crisis = state.pendingCrisis
+  if (!crisis) return { success: false, message: '没有待处理的危机' }
+
+  const script = CFG.crisis.scripts[crisis.scriptId]
+  if (!script) return { success: false, message: '危机剧本不存在' }
+
+  const strategy = script.strategies.find((s) => s.id === strategyId)
+  if (!strategy) return { success: false, message: '策略不存在' }
+
+  const resource = CFG.crisis.resourceLevels[resourceLevel]
+  if (!resource) return { success: false, message: '资源级别不存在' }
+
+  const baseCost = strategy.cost
+  const totalCost = Math.round(baseCost * (1 + resource.costPercent / 100))
+
+  if (state.money < totalCost) {
+    return { success: false, message: '资金不足' }
+  }
+
+  const logs = [...state.logs]
+  const trainees = state.trainees.map((t) => ({ ...t, stats: { ...t.stats } }))
+  let money = state.money - totalCost
+  let totalExpenses = state.totalExpenses + totalCost
+  let fans = state.fans
+  let reputation = state.reputation
+
+  const target = crisis.target ? trainees.find((t) => t.id === crisis.target.id) : null
+  const effects = strategy.effects
+  const mult = resource.multiplier
+
+  const repChange = randInt(effects.reputation[0], effects.reputation[1])
+  const fansChange = randInt(effects.fans[0], effects.fans[1])
+
+  reputation = clamp(reputation + Math.round(repChange * mult), CFG.reputation.min, CFG.reputation.max)
+  fans = Math.max(0, fans + Math.round(fansChange * mult))
+
+  if (target) {
+    if (effects.targetStress) {
+      target.stress = clamp(target.stress + randInt(effects.targetStress[0], effects.targetStress[1]), 0, 100)
+    }
+    if (effects.targetFatigue) {
+      target.fatigue = clamp(target.fatigue + randInt(effects.targetFatigue[0], effects.targetFatigue[1]), 0, 100)
+    }
+  }
+
+  const roll = Math.random()
+  const successChance = Math.min(0.95, effects.successChance * (0.8 + mult * 0.2))
+  const isSuccess = roll < successChance
+
+  if (isSuccess) {
+    if (effects.successBonus?.reputation) {
+      const bonus = randInt(effects.successBonus.reputation[0], effects.successBonus.reputation[1])
+      reputation = clamp(reputation + Math.round(bonus * mult), CFG.reputation.min, CFG.reputation.max)
+    }
+    if (effects.successBonus?.fans) {
+      const bonus = randInt(effects.successBonus.fans[0], effects.successBonus.fans[1])
+      fans += Math.round(bonus * mult)
+    }
+    logs.push({
+      day: state.day,
+      text: `🚨【${crisis.title}】采用「${strategy.name}」+${resource.label}，处理成功！`,
+    })
+  } else {
+    if (effects.failurePenalty?.reputation) {
+      const penalty = randInt(effects.failurePenalty.reputation[0], effects.failurePenalty.reputation[1])
+      reputation = clamp(reputation + Math.round(penalty * mult), CFG.reputation.min, CFG.reputation.max)
+    }
+    if (effects.failurePenalty?.fans) {
+      const penalty = randInt(effects.failurePenalty.fans[0], effects.failurePenalty.fans[1])
+      fans = Math.max(0, fans + Math.round(penalty * mult))
+    }
+    logs.push({
+      day: state.day,
+      text: `🚨【${crisis.title}】采用「${strategy.name}」+${resource.label}，处理失败，舆论进一步发酵...`,
+    })
+  }
+
+  const followUpDays = randInt(CFG.crisis.followUpDays[0], CFG.crisis.followUpDays[1])
+  const pendingFollowUp = {
+    crisisId: crisis.id,
+    crisisTitle: crisis.title,
+    strategyId: strategy.id,
+    followUpAction: strategy.followUp,
+    availableDay: state.day + followUpDays,
+    success: isSuccess,
+  }
+
+  const resolvedCrisis = {
+    ...crisis,
+    strategy: strategyId,
+    resourceLevel,
+    success: isSuccess,
+    cost: totalCost,
+    resolvedDay: state.day,
+    followUp: strategy.followUp,
+  }
+
+  return {
+    success: true,
+    state: {
+      ...state,
+      money,
+      totalExpenses,
+      fans,
+      reputation,
+      trainees,
+      logs,
+      pendingCrisis: null,
+      pendingFollowUp,
+      crisisHistory: [...state.crisisHistory, resolvedCrisis],
+    },
+  }
+}
+
+export function resolveFollowUp(state, doFollowUp) {
+  const followUp = state.pendingFollowUp
+  if (!followUp) return { success: false, message: '没有待跟进的危机' }
+
+  const logs = [...state.logs]
+  let money = state.money
+  let totalExpenses = state.totalExpenses
+  let reputation = state.reputation
+  let fans = state.fans
+
+  if (doFollowUp && followUp.followUpAction !== 'none') {
+    const action = CFG.crisis.followUpActions[followUp.followUpAction]
+    if (action) {
+      if (state.money < action.cost) {
+        return { success: false, message: '资金不足，无法执行后续行动' }
+      }
+      money -= action.cost
+      totalExpenses += action.cost
+
+      const repBonus = randInt(action.reputationBonus[0], action.reputationBonus[1])
+      reputation = clamp(reputation + repBonus, CFG.reputation.min, CFG.reputation.max)
+
+      const fansBonus = Math.round(repBonus * 20 + randInt(50, 150))
+      fans += fansBonus
+
+      logs.push({
+        day: state.day,
+        text: `📋【${followUp.crisisTitle}】后续：${action.name}，口碑+${repBonus}，粉丝+${fansBonus}`,
+      })
+    }
+  } else {
+    logs.push({
+      day: state.day,
+      text: `📋【${followUp.crisisTitle}】后续：未采取额外行动`,
+    })
+  }
+
+  return {
+    success: true,
+    state: {
+      ...state,
+      money,
+      totalExpenses,
+      reputation,
+      fans,
+      logs,
+      pendingFollowUp: null,
+    },
+  }
 }

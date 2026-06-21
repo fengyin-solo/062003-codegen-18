@@ -14,6 +14,10 @@
     :active-trainees="activeTrainees"
     :days-left="daysLeft"
     :profit="profit"
+    :reputation="reputation"
+    :reputation-label="reputationLabel"
+    :reputation-level="reputationLevel"
+    :show-follow-up="showFollowUp"
     :theme="theme"
     :can-end-day="canEndDay()"
     :rating-results="getRatingResults()"
@@ -27,6 +31,8 @@
     @debut="onDebut"
     @resolve-poaching="handlePoaching"
     @release-single="onReleaseSingle"
+    @resolve-crisis="onResolveCrisis"
+    @resolve-followup="onResolveFollowUp"
   />
 </template>
 
@@ -47,6 +53,10 @@ const {
   profit,
   daysLeft,
   activeTrainees,
+  reputation,
+  reputationLabel,
+  reputationLevel,
+  showFollowUp,
   startNewGame,
   loadGame,
   setSchedule,
@@ -56,6 +66,8 @@ const {
   handlePoaching,
   handleDebut,
   handleReleaseSingle,
+  handleCrisis,
+  handleFollowUp,
   dismissRating,
   backToMenu,
   getRatingResults,
@@ -96,5 +108,15 @@ function onReleaseSingle(groupId) {
   if (result && !result.success) {
     alert(result.message)
   }
+}
+
+function onResolveCrisis(strategyId, resourceLevel, callback) {
+  const result = handleCrisis(strategyId, resourceLevel)
+  if (callback) callback(result)
+}
+
+function onResolveFollowUp(doFollowUp, callback) {
+  const result = handleFollowUp(doFollowUp)
+  if (callback) callback(result)
 }
 </script>

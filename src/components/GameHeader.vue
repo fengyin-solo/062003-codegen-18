@@ -26,6 +26,17 @@
         <span class="label">出道</span>
         <span class="value">{{ state.groups.length }}/{{ targetGroups }}</span>
       </div>
+      <div class="stat-item reputation-item">
+        <span class="label">口碑</span>
+        <div class="reputation-display">
+          <div class="reputation-bar">
+            <div class="reputation-fill" :class="reputationLevel" :style="{ width: reputation + '%' }"></div>
+          </div>
+          <span class="value reputation-value" :class="reputationLevel">
+            {{ Math.round(reputation) }} ({{ reputationLabel }})
+          </span>
+        </div>
+      </div>
     </div>
     <button class="theme-btn" @click="$emit('toggle-theme')">
       {{ theme === 'light' ? '🌙' : '☀️' }}
@@ -40,6 +51,9 @@ defineProps({
   state: Object,
   daysLeft: Number,
   profit: Number,
+  reputation: Number,
+  reputationLabel: String,
+  reputationLevel: String,
   theme: String,
 })
 defineEmits(['back', 'toggle-theme'])
@@ -98,6 +112,62 @@ const targetGroups = GAME_CONFIG.victory.targetGroups
 
 .stat-item .value.success { color: var(--success); }
 .stat-item .value.danger { color: var(--danger); }
+
+.reputation-item {
+  min-width: 160px;
+}
+
+.reputation-display {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+}
+
+.reputation-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-secondary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.reputation-fill {
+  height: 100%;
+  transition: width 0.3s ease, background 0.3s ease;
+  border-radius: 3px;
+}
+
+.reputation-fill.excellent {
+  background: linear-gradient(90deg, #10b981, #06b6d4);
+}
+
+.reputation-fill.good {
+  background: linear-gradient(90deg, #84cc16, #10b981);
+}
+
+.reputation-fill.normal {
+  background: linear-gradient(90deg, #f59e0b, #84cc16);
+}
+
+.reputation-fill.poor {
+  background: linear-gradient(90deg, #f97316, #f59e0b);
+}
+
+.reputation-fill.critical {
+  background: linear-gradient(90deg, #ef4444, #f97316);
+}
+
+.reputation-value {
+  font-size: 0.85rem;
+}
+
+.reputation-value.excellent { color: #06b6d4; }
+.reputation-value.good { color: #10b981; }
+.reputation-value.normal { color: #f59e0b; }
+.reputation-value.poor { color: #f97316; }
+.reputation-value.critical { color: #ef4444; }
 
 .theme-btn {
   background: var(--bg-secondary);
