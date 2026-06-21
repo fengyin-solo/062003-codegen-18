@@ -30,10 +30,10 @@
         <span class="label">口碑</span>
         <div class="reputation-display">
           <div class="reputation-bar">
-            <div class="reputation-fill" :class="reputationLevel" :style="{ width: reputation + '%' }"></div>
+            <div class="reputation-fill" :class="safeReputationLevel" :style="{ width: reputationWidth }"></div>
           </div>
-          <span class="value reputation-value" :class="reputationLevel">
-            {{ Math.round(reputation) }} ({{ reputationLabel }})
+          <span class="value reputation-value" :class="safeReputationLevel">
+            {{ safeReputation }} ({{ safeReputationLabel }})
           </span>
         </div>
       </div>
@@ -45,9 +45,10 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { GAME_CONFIG } from '../config/gameConfig'
 
-defineProps({
+const props = defineProps({
   state: Object,
   daysLeft: Number,
   profit: Number,
@@ -59,6 +60,23 @@ defineProps({
 defineEmits(['back', 'toggle-theme'])
 
 const targetGroups = GAME_CONFIG.victory.targetGroups
+
+const safeReputation = computed(() => {
+  const rep = props.reputation
+  return typeof rep === 'number' && !isNaN(rep) ? Math.round(rep) : 50
+})
+
+const safeReputationLabel = computed(() => {
+  return props.reputationLabel || '一般'
+})
+
+const safeReputationLevel = computed(() => {
+  return props.reputationLevel || 'normal'
+})
+
+const reputationWidth = computed(() => {
+  return `${Math.max(0, Math.min(100, safeReputation.value))}%`
+})
 </script>
 
 <style scoped>

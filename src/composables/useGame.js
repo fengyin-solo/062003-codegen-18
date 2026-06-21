@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import { GAME_CONFIG } from '../config/gameConfig'
 import {
   createInitialGameState,
+  migrateGameState,
   processDay,
   resolvePoachingEvent,
   debutGroup,
@@ -29,12 +30,16 @@ export function useGame() {
   const activeTrainees = computed(() =>
     state.value ? state.value.trainees.filter((t) => t.status !== 'left') : []
   )
-  const reputation = computed(() => (state.value ? state.value.reputation : 50))
+  const reputation = computed(() => {
+    if (!state.value) return 50
+    const rep = state.value.reputation
+    return typeof rep === 'number' && !isNaN(rep) ? rep : 50
+  })
   const reputationLevel = computed(() =>
-    state.value ? getReputationLevel(state.value.reputation) : 'normal'
+    getReputationLevel(reputation.value)
   )
   const reputationLabel = computed(() =>
-    state.value ? getReputationLabel(state.value.reputation) : '一般'
+    getReputationLabel(reputation.value)
   )
   const showFollowUp = computed(() => {
     if (!state.value || !state.value.pendingFollowUp) return false
@@ -49,9 +54,11 @@ export function useGame() {
   }
 
   function loadGame(slotIndex, saved) {
-    state.value = JSON.parse(JSON.stringify(saved.gameState))
+    const rawState = JSON.parse(JSON.stringify(saved.gameState))
+    state.value = migrateGameState(rawState)
     currentSlot.value = slotIndex
     screen.value = 'game'
+    autoSave()
   }
 
   function autoSave() {

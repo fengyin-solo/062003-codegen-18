@@ -31,6 +31,51 @@ export function createInitialGameState() {
   }
 }
 
+export function migrateGameState(savedState) {
+  if (!savedState) return createInitialGameState()
+
+  const defaults = createInitialGameState()
+
+  const safeReputation = typeof savedState.reputation === 'number' && !isNaN(savedState.reputation)
+    ? savedState.reputation
+    : calculateInitialReputation(savedState)
+
+  return {
+    ...defaults,
+    ...savedState,
+    reputation: clamp(safeReputation, CFG.reputation.min, CFG.reputation.max),
+    pendingCrisis: savedState.pendingCrisis ?? null,
+    pendingFollowUp: savedState.pendingFollowUp ?? null,
+    crisisHistory: savedState.crisisHistory ?? [],
+    lastSingleDay: savedState.lastSingleDay ?? {},
+    totalRevenue: savedState.totalRevenue ?? 0,
+    totalExpenses: savedState.totalExpenses ?? 0,
+    pendingRating: savedState.pendingRating ?? false,
+    gameStatus: savedState.gameStatus ?? 'playing',
+    schedule: savedState.schedule ?? {},
+  }
+}
+
+function calculateInitialReputation(state) {
+  const fans = state.fans ?? CFG.initial.fans
+  const groups = state.groups?.length ?? 0
+  const trainees = state.trainees?.length ?? CFG.initial.traineeCount
+  const avgTraineeStats = state.trainees?.length > 0
+    ? state.trainees.reduce((sum, t) => {
+        const statSum = Object.values(t.stats || {}).reduce((s, v) => s + (typeof v === 'number' ? v : 0), 0)
+        return sum + statSum / (CFG.stats.length || 5)
+      }, 0) / state.trainees.length
+    : 30
+
+  let rep = CFG.reputation.initial
+  rep += Math.min(30, Math.floor(fans / 200))
+  rep += groups * 5
+  rep += Math.floor((avgTraineeStats - 30) * 0.5)
+  rep += trainees > CFG.initial.traineeCount ? (trainees - CFG.initial.traineeCount) * 2 : 0
+
+  return clamp(rep, CFG.reputation.min, CFG.reputation.max)
+}
+
 function createTrainee(name, index) {
   const stats = {}
   for (const key of CFG.stats) {
@@ -272,7 +317,9 @@ export function processDay(state) {
   const newDay = state.day + 1
   const pendingRating = state.day % CFG.rating.interval === 0
 
-  let reputation = state.reputation
+  let reputation = typeof state.reputation === 'number' && !isNaN(state.reputation)
+    ? state.reputation
+    : CFG.reputation.initial
   reputation = clamp(reputation + CFG.reputation.dailyRecovery, CFG.reputation.min, CFG.reputation.max)
 
   let pendingEvent = null
@@ -662,8 +709,10 @@ export function resolveCrisis(state, strategyId, resourceLevel) {
   const trainees = state.trainees.map((t) => ({ ...t, stats: { ...t.stats } }))
   let money = state.money - totalCost
   let totalExpenses = state.totalExpenses + totalCost
-  let fans = state.fans
-  let reputation = state.reputation
+  let fans = typeof state.fans === 'number' && !isNaN(state.fans) ? state.fans : CFG.initial.fans
+  let reputation = typeof state.reputation === 'number' && !isNaN(state.reputation)
+    ? state.reputation
+    : CFG.reputation.initial
 
   const target = crisis.target ? trainees.find((t) => t.id === crisis.target.id) : null
   const effects = strategy.effects
@@ -760,8 +809,10 @@ export function resolveFollowUp(state, doFollowUp) {
   const logs = [...state.logs]
   let money = state.money
   let totalExpenses = state.totalExpenses
-  let reputation = state.reputation
-  let fans = state.fans
+  let reputation = typeof state.reputation === 'number' && !isNaN(state.reputation)
+    ? state.reputation
+    : CFG.reputation.initial
+  let fans = typeof state.fans === 'number' && !isNaN(state.fans) ? state.fans : CFG.initial.fans
 
   if (doFollowUp && followUp.followUpAction !== 'none') {
     const action = CFG.crisis.followUpActions[followUp.followUpAction]
